@@ -17,29 +17,6 @@ class GFPayflexiApi
         $this->secret_key = $config->secret_key ?? '';
         $this->public_key = $config->public_key ?? '';
     }
-
-    /**
-     * Track Payment Transactions from this Plugin
-     *
-     * @param string $trx_ref
-     * @return void
-     */
-    public function log_transaction_success($reference)
-    {
-        $params = [
-            'plugin_name'  => 'pstk-gravityforms',
-            'public_key' => $this->public_key,
-            'transaction_reference' => $reference
-        ];
-
-        $this->send_request(
-            'log/charge_success',
-            $params,
-            'post',
-            'https://plugin-tracker.paystackintegrations.com/'
-        );
-    }
-
     /**
      * Send request to the PayFlexi Api
      * 
@@ -54,29 +31,28 @@ class GFPayflexiApi
         $endpoint,
         $args = array(),
         $method = 'post',
-        $domain = 'https://api.payflexi.co/'
+        $domain = 'https://api.payflexi.test/'
     ) {
         $uri = "{$domain}{$endpoint}";
 
         $arg_array = array(
             'method'    => strtoupper($method),
-            'body'      => $args,
-            'timeout'   => 15,
-            'headers'   => $this->get_headers()
+            'body'      => json_encode($args),
+            'timeout'   => 60,
+            'headers'   => $this->get_headers(),
+            'sslverify' => false, //Set to true on production
         );
 
         $res = wp_remote_request($uri, $arg_array);
 
         if (is_wp_error($res)) {
-            throw new Exception(sprintf(__('You had an HTTP error connecting to %s', 'gravityformspaystack'), $this->name));
+            throw new Exception(sprintf(__('You had an HTTP error connecting to %s', 'gravityformspayflexi'), $this->name));
         }
 
         $body = json_decode($res['body'], true);
 
         if ($body !== null) {
-            error_log(__METHOD__ . '(): for ' . $uri . ' PayFlexi Request ' . print_r($arg_array, true) . ' PayFlexi Response => ' . print_r($body, true));
-
-            if (isset($body['error']) || $body['status'] == false) {
+            if ($body['errors']) {
                 throw new Exception("{$body['message']}");
             } else {
                 return $body;
@@ -105,7 +81,8 @@ class GFPayflexiApi
     public function get_headers()
     {
         return apply_filters('gf_payflexi_request_headers', [
-            'Authorization' => "Bearer {$this->secret_key}"
+            'Authorization' => "Bearer {$this->secret_key}",
+            'Content-Type' =>  "application/json"
         ]);
     }
 }
