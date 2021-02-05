@@ -260,7 +260,7 @@ class GFPayflexi extends GFPaymentAddOn
 		$scripts = array(
 			array(
 				'handle'    => 'payflexi.js',
-				'src'       => 'https://payflexi.test/js/v1/global-payflexi.js/',
+				'src'       => 'https://payflexi.test/js/v1/global-payflexi.js',
 				'version'   => $this->_version,
 				'deps'      => array(),
 				'in_footer' => false,
@@ -1062,16 +1062,12 @@ class GFPayflexi extends GFPaymentAddOn
 		$type = $event['event'];
 
 		if ('transaction.approved' == $type ) {
-
-			ray(['Event' => $event]);
 		
 			if (!isset($event['data']['domain']) || isset($event['data']['meta']['invoice_action'])) {
 				return false;
 			}
 
 			$entry_id = rgars($event, 'data/meta/entry_id');
-
-			ray(['Entry ID' => $entry_id]);
 
 				if (!$entry_id && $reference = rgars($event, 'data/initial_reference')) {
 					$entry_id = $this->get_entry_id_by_reference($reference);
@@ -1083,12 +1079,6 @@ class GFPayflexi extends GFPaymentAddOn
 
 				$entry = GFAPI::get_entry($entry_id);
 
-				$payflexi_tx_reference = gform_get_meta($entry_id, 'payflexi_tx_reference');
-
-				ray(['PayFlexi Transaction Reference' => $payflexi_tx_reference]);
-
-				ray(['Entry' => $entry]);
-
 				if (is_wp_error($entry)) {
 					$this->log_error(__METHOD__ . '(): ' . $entry->get_error_message());
 
@@ -1099,22 +1089,40 @@ class GFPayflexi extends GFPaymentAddOn
 
 				$feed = $this->get_payment_feed($entry);
 
-				ray(['Payment Feed' => $feed]);
-
 				// Let's ignore forms that are no longer configured to use the PayFlexi add-on  
 				if (!$feed || !rgar($feed, 'is_active')) {
 					$this->log_error(__METHOD__ . "(): Form no longer uses the PayFlexi Addon. Form ID: {$entry['form_id']}. Aborting.");
 
 					return false;
 				}
+
+				$payflexi_tx_reference = gform_get_meta($entry['id'], 'payflexi_tx_reference');
+				$payflexi_total_order_amount = gform_get_meta($entry['id'], 'payflexi_total_order_amount');
+
+				if ($event['data']['txn_amount'] < $payflexi_total_order_amount ) {
+
+					if($payflexi_tx_reference === $event['data']['initial_reference']){
+						gform_update_meta($entry['id'], 'payflexi_total_order_amount', $event['data']['amount']);
+						gform_update_meta($entry['id'], 'payflexi_installment_amount_paid', $event['data']['txn_amount']);
+						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
+					}
+					if($payflexi_tx_reference !== $event['data']['initial_reference']){
+						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
+						$total_installment_amount_paid = $payflexi_installment_amount_paid + $event['data']['txn_amount'];
+						gform_update_meta($entry['id'], 'payflexi_installment_amount_paid', $total_installment_amount_paid);
+						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
+					}
+				}
+		
+				ray(['Post Payment Entry' => $entry]);
 			
 				$action['id']               = rgars($event, 'data/id') . '_' . $type;
 				$action['entry_id']         = $entry_id;
 				$action['transaction_id']   = rgars($event, 'data/id');
-				$action['amount']           = $this->get_amount_import(rgars($event, 'data/txn_amount'), rgars($event, 'data/currency'));
+				$action['amount']           = $this->get_amount_import(rgars($event, $payflexi_installment_amount_paid), rgars($event, 'data/currency'));
 				$action['type']             = 'complete_payment';
 				$action['ready_to_fulfill'] = !$entry['is_fulfilled'] ? true : false;
-				$action['payment_date']     = rgars($event, 'data/paidAt');
+				$action['payment_date']     = rgars($event, 'data/created_at');
 				$action['payment_method']   = $this->_slug;
 	
 		}
