@@ -1,4 +1,4 @@
-=== PayFlexi Add-On for Gravity Forms ===
+=== PayFlexi Instalment Payment Gateway for Gravity Forms ===
 Contributors: stanwarri
 Plugin URI: https://payflexi.co
 Tags: payments, flexible payment, installment payment, gravityforms

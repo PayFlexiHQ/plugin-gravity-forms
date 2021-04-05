@@ -31,7 +31,7 @@ class GFPayflexiApi
         $endpoint,
         $args = array(),
         $method = 'post',
-        $domain = 'https://api.payflexi.test/'
+        $domain = 'https://api.payflexi.co/'
     ) {
         $uri = "{$domain}{$endpoint}";
 

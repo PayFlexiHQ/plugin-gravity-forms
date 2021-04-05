@@ -1,7 +1,7 @@
-# PayFlexi Flexible Checkout Addon for Gravity Forms
+# PayFlexi Instalment Payment Gateway for Gravity Forms
 
 ## Introduction
-PayFlexi Flexible Checkout Addon for Gravity Forms allows you to quickly and easily implement installment payments with WordPress. With the PayFlexi Flexible Checkoy Add-On you can allow your customers to be for product and services in flexible installment.
+PayFlexi Instalment Payment Gateway for Gravity Forms allows you to quickly and easily implement installment payments with WordPress. With the PayFlexi Flexible Checkoy Add-On you can allow your customers to be for product and services in flexible installment.
 
 PayFlexi works with your existing payment gateway processor, and we currently support these gateways:
 

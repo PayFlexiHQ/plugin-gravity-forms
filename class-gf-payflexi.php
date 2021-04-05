@@ -260,7 +260,7 @@ class GFPayflexi extends GFPaymentAddOn
 		$scripts = array(
 			array(
 				'handle'    => 'payflexi.js',
-				'src'       => 'https://payflexi.test/js/v1/global-payflexi.js',
+				'src'       => 'https://payflexi.co/js/v1/global-payflexi.js',
 				'version'   => $this->_version,
 				'deps'      => array(),
 				'in_footer' => false,
@@ -424,7 +424,7 @@ class GFPayflexi extends GFPaymentAddOn
 			<ol class="payflexi-webhooks-instructions">
 				<li>
 					<p><?php esc_html_e('Click the following link and log in to access your PayFlexi Webhooks management page:', 'gravityformspayflexi'); ?> </p>
-					<a href="https://merchant.payflexi.co/settings/#api-keys-integrations" target="_blank">https://merchant.payflexi.co/settings/#api-keys-integrations</a>
+					<a href="https://merchant.payflexi.co/developers?tab=api-keys-integrations" target="_blank">https://merchant.payflexi.co/developers?tab=api-keys-integrations</a>
 				</li>
 				<li>
 					<p>
@@ -695,13 +695,6 @@ class GFPayflexi extends GFPaymentAddOn
 	 */
 	public function validate_custom_meta($field)
 	{
-		/*
-		 * Number of keys is limited to 20.
-		 * Interface should control this, validating just in case.
-		 * Key names have maximum length of 40 characters.
-		 */
-
-		// Get metadata from posted settings.
 		$settings  = $this->get_posted_settings();
 		$meta_data = $settings['metaData'];
 
@@ -816,7 +809,7 @@ class GFPayflexi extends GFPaymentAddOn
 		$return_url = add_query_arg('gf_payflexi_return', base64_encode($ids_query), $page_url);
 
 		// $setup_fee      = rgar($submission_data, 'setup_fee');
-		// $trial_amount   = rgar($submission_data, 'trial');
+		$form_title   = rgar($submission_data, 'form_title');
 		$payment_amount = rgar($submission_data, 'payment_amount');
 
 		// Currency
@@ -849,22 +842,15 @@ class GFPayflexi extends GFPaymentAddOn
 			'callback_url' => $return_url,
 			'domain'  => 'global',
 			'meta'     => array(
+				'title' 	  => $form_title,
 				'entry_id'    => $entry['id'],
 				'site_url'    => esc_url(get_site_url()),
-				'ip_address'  => $_SERVER['REMOTE_ADDR'],
-				'custom_fields' => $custom_data
+				'ip_address'  => $_SERVER['REMOTE_ADDR']
 			)
 		);
 
-		if ($is_product) {
-			$line_items     = rgar($submission_data, 'line_items');
-			$discounts      = rgar($submission_data, 'discounts');
-		}
-
 		// Initialize the charge on PayFlexi's servers - this will be used to charge the user's card
 		$response = (object) $this->payflexi_api->send_request("merchants/transactions/", $args);
-
-		$this->log_debug(__METHOD__ . "(): Initialize PayFlexi Transaction:" . print_r($response, true));
 
 		if ($response->errors) {
 			return false;
@@ -872,8 +858,6 @@ class GFPayflexi extends GFPaymentAddOn
 
 		gform_update_meta($entry['id'], 'payflexi_tx_reference', $response->reference);
 		gform_update_meta($entry['id'], 'payflexi_tx_callback_url', $response->checkout_url);
-
-		$this->log_debug(__METHOD__ . "(): Sending to PayFlexi: {$response->checkout_url}");
 
 		return  $response->checkout_url;
 	}
@@ -934,8 +918,6 @@ class GFPayflexi extends GFPaymentAddOn
 		if ($str = sanitize_text_field(rgget('gf_payflexi_return'))) {
 			$str = base64_decode($str);
 
-			$this->log_debug(__METHOD__ . '(): Return callback request received. Starting to process.');
-
 			parse_str($str, $query);
 
 			if (wp_hash('ids=' . $query['ids']) == $query['hash']) {
@@ -970,14 +952,22 @@ class GFPayflexi extends GFPaymentAddOn
 					return false;
 				}
 
+				if ($feed && isset($_GET['pf_cancelled'])) {
+					wp_redirect($entry['source_url']);
+					exit;
+				}
+		
+				if ($feed && isset($_GET['pf_declined'])) {
+					wp_redirect($entry['source_url']);
+					exit;
+				}
+
 				// Getting mode Live (Production) or Test (Sandbox)
 				$mode = $feed['meta']['mode'];
 
 				$this->payflexi_api($mode);
 
 				$reference = sanitize_text_field(rgget('pf_approved'));
-
-				ray(['PayFlexi Reference' => $reference]);
 
 				try {
 					$response = $this->payflexi_api->send_request("merchants/transactions/{$reference}", [], 'get');
@@ -988,8 +978,6 @@ class GFPayflexi extends GFPaymentAddOn
 
 					return new WP_Error('transaction_verification', $e->getMessage());
 				}
-
-				ray(['Payment Response from PayFlexi' => $response]);
 
 				$charge = $response['data'];
 
@@ -1058,10 +1046,10 @@ class GFPayflexi extends GFPaymentAddOn
 
 		$this->log_debug(__METHOD__ . '(): Webhook callback received. Starting to process => ' . print_r($_REQUEST, true));
 
-		// Get event type.
+		
 		$type = $event['event'];
 
-		if ('transaction.approved' == $type ) {
+		if ('transaction.approved' == $type && 'approved' == $event['data']['status'] ) {
 		
 			if (!isset($event['data']['domain']) || isset($event['data']['meta']['invoice_action'])) {
 				return false;
@@ -1113,8 +1101,6 @@ class GFPayflexi extends GFPaymentAddOn
 						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
 					}
 				}
-		
-				ray(['Post Payment Entry' => $entry]);
 			
 				$action['id']               = rgars($event, 'data/id') . '_' . $type;
 				$action['entry_id']         = $entry_id;

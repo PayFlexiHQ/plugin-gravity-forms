@@ -1,8 +1,8 @@
 <?php
 /*
-Plugin Name: PayFlexi Add-On for Gravity Forms 
+Plugin Name: PayFlexi Instalment Payment Gateway for Gravity Forms
 Plugin URI: https://developers.payflexi.co
-Description: Integrates Gravity Forms with PayFlexi, enabling end users to purchase goods and services through Gravity Forms and pay in full or flexible installments.
+Description: Integrates Gravity Forms with PayFlexi, enabling end users to purchase goods and services through Gravity Forms and pay in full or flexible instalments.
 Version: 1.0.0
 Author: PayFlexi
 Author URI: https://payflexi.co
