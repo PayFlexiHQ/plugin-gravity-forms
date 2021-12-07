@@ -3,7 +3,7 @@
 Plugin Name: PayFlexi Instalment Payment Gateway for Gravity Forms
 Plugin URI: https://developers.payflexi.co
 Description: Integrates Gravity Forms with PayFlexi, enabling end users to purchase goods and services through Gravity Forms and pay in full or flexible instalments.
-Version: 1.0.0
+Version: 1.2.1
 Author: PayFlexi
 Author URI: https://payflexi.co
 License: GPL-2.0+
@@ -30,7 +30,7 @@ Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 
 defined('ABSPATH') || die();
 
-define('GF_PAYFLEXI_VERSION', '1.0.0');
+define('GF_PAYFLEXI_VERSION', '1.2.0');
 
 add_action('gform_loaded', array('GF_Payflexi_Bootstrap', 'load'), 5);
 

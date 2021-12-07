@@ -37,16 +37,16 @@ class GFPayflexiApi
 
         $arg_array = array(
             'method'    => strtoupper($method),
-            'body'      => json_encode($args),
+            'body'      => !empty($args) ? json_encode($args) : $args,
             'timeout'   => 60,
             'headers'   => $this->get_headers(),
             'sslverify' => false, //Set to true on production
         );
 
         $res = wp_remote_request($uri, $arg_array);
-
+    
         if (is_wp_error($res)) {
-            throw new Exception(sprintf(__('You had an HTTP error connecting to %s', 'gravityformspayflexi'), $this->name));
+            throw new Exception(sprintf(__('You had an HTTP error connecting to %s', 'gravityformspayflexi'), $this->plugin_name));
         }
 
         $body = json_decode($res['body'], true);
@@ -58,7 +58,7 @@ class GFPayflexiApi
                 return $body;
             }
         } else { // Un-decipherable message
-            throw new Exception(sprintf(__('There was an issue connecting with the payment processor. Try again later.', 'gravityformspayflexi'), $this->name));
+            throw new Exception(sprintf(__('There was an issue connecting with the payment processor. Try again later.', 'gravityformspayflexi'), $this->plugin_name));
         }
 
         return false;

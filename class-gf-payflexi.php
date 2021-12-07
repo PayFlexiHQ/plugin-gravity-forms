@@ -238,52 +238,6 @@ class GFPayflexi extends GFPaymentAddOn
 
 		parent::pre_init();
 	}
-	/**
-	 * Return the scripts which should be enqueued.
-	 *
-	 * @since  1.0
-	 * @access public
-	 *
-	 * @uses GFPaymentAddOn::scripts()
-	 * @uses GFAddOn::get_base_url()
-	 * @uses GFAddOn::get_short_title()
-	 * @uses GFStripe::$_version
-	 * @uses GFCommon::get_base_url()
-	 * @uses GFStripe::frontend_script_callback()
-	 *
-	 * @return array The scripts to be enqueued.
-	 */
-	public function scripts() {
-
-		$min = defined( 'SCRIPT_DEBUG' ) && SCRIPT_DEBUG || isset( $_GET['gform_debug'] ) ? '' : '.min';
-
-		$scripts = array(
-			array(
-				'handle'    => 'payflexi.js',
-				'src'       => 'https://payflexi.co/js/v1/global-payflexi.js',
-				'version'   => $this->_version,
-				'deps'      => array(),
-				'in_footer' => false,
-				'enqueue'   => array(
-					array( $this, 'payflexi_callback' ),
-				),
-			),
-			array(
-				'handle'    => 'gforms_payflexi_frontend',
-				'src'       => $this->get_base_url() . "/js/frontend{$min}.js",
-				'version'   => $this->_version,
-				'deps'      => array( 'jquery', 'gform_json', 'gform_gravityforms' ),
-				'in_footer' => false,
-				'enqueue'   => array(
-					array( $this, 'frontend_script_callback' ),
-				),
-			),
-		);
-
-		return array_merge( parent::scripts(), $scripts );
-
-	}
-
 	// # PLUGIN SETTINGS -----------------------------------------------------------------------------------------------
 
 	/**
@@ -348,6 +302,13 @@ class GFPayflexi extends GFPaymentAddOn
 		);
 
 		$credentials_fields = array(
+			array(
+				'name'  => 'enabled_payment_gateway',
+				'label' => esc_html__('Enabled Payment Gateway', 'gravityformspayflexi'),
+				'type'  => 'text',
+				'class'    => 'medium',
+				'description' => 'Add the corresponding gateway you connected on PayFlexi. Enter "stripe" if you connected your Stripe account on PayFlexi',
+			),
 			array(
 				'name'  => 'test_public_key',
 				'label' => esc_html__('Test Public Key', 'gravityformspayflexi'),
@@ -765,7 +726,48 @@ class GFPayflexi extends GFPaymentAddOn
 		);
 	}
 
-	// # PAYFLEXI TRANSACTIONS -------------------------------------------------------------------------------------------
+	public function get_fields_meta_data($feed, $entry, $fields)
+	{
+		$data = [];
+
+		foreach ($fields as $field) {
+			$field_id = $feed['meta'][$field['meta_name']];
+			$value    = rgar($entry, $field_id);
+
+			if ($field['name'] == 'country') {
+				$value = class_exists('GF_Field_Address') ? GF_Fields::get('address')->get_country_code($value) : GFCommon::get_country_code($value);
+			} elseif ($field['name'] == 'state') {
+				$value = class_exists('GF_Field_Address') ? GF_Fields::get('address')->get_us_state_code($value) : GFCommon::get_us_state_code($value);
+			}
+
+			if (!empty($value)) {
+				$data["{$field['name']}"] = $value;
+			}
+		}
+
+		return $data;
+	}
+
+	public function get_customer_fields()
+	{
+		return array(
+			array('name' => 'email', 'label' => 'Email', 'meta_name' => 'customerInformation_email'),
+			array('name' => 'first_name', 'label' => 'First Name', 'meta_name' => 'customerInformation_first_name'),
+			array('name' => 'last_name', 'label' => 'Last Name', 'meta_name' => 'customerInformation_last_name'),
+		);
+	}
+
+	public function get_billing_fields()
+	{
+		return array(
+			array('name' => 'address1', 'label' => 'Address', 'meta_name' => 'billingInformation_address'),
+			array('name' => 'address2', 'label' => 'Address 2', 'meta_name' => 'billingInformation_address2'),
+			array('name' => 'city', 'label' => 'City', 'meta_name' => 'billingInformation_city'),
+			array('name' => 'state', 'label' => 'State', 'meta_name' => 'billingInformation_state'),
+			array('name' => 'zip', 'label' => 'Zip', 'meta_name' => 'billingInformation_zip'),
+			array('name' => 'country', 'label' => 'Country', 'meta_name' => 'billingInformation_country'),
+		);
+	}
 
 	/**
 	 * Useful when developing a payment gateway that processes the payment outside of the website (i.e. Paystack Redirect).
@@ -801,12 +803,7 @@ class GFPayflexi extends GFPaymentAddOn
 		// Getting the product status
 		$is_product = $feed['meta']['transactionType'] === 'product';
 
-		// URL that will listen to callback from Paystack
-		$page_url = get_bloginfo('url');
-		$ids_query = "ids={$entry['id']}|{$feed['id']}|{$form['id']}";
-		$ids_query .= '&hash=' . wp_hash($ids_query);
-
-		$return_url = add_query_arg('gf_payflexi_return', base64_encode($ids_query), $page_url);
+		$return_url = $this->return_url($form['id'], $entry['id'], $feed['id']);
 
 		// $setup_fee      = rgar($submission_data, 'setup_fee');
 		$form_title   = rgar($submission_data, 'form_title');
@@ -831,12 +828,13 @@ class GFPayflexi extends GFPaymentAddOn
 		$reference = uniqid("gf-{$entry['id']}-");
 
 		// Updating lead's payment_status to Processing
-		GFAPI::update_entry_property($entry['id'], 'payment_status', 'Processing');
+		GFAPI::update_entry_property($entry['id'], 'payment_status', 'Pending');
 
 		// Prepare transaction data
 		$args = array(
 			'email'        => $customer_info['email'],
 			'currency'     => $currency,
+			'gateway' 	   => $this->get_plugin_setting( 'enabled_payment_gateway' ),
 			'amount'       => (int)$this->get_amount_export($payment_amount, $currency),
 			'reference'    => $reference,
 			'callback_url' => $return_url,
@@ -858,52 +856,31 @@ class GFPayflexi extends GFPaymentAddOn
 
 		gform_update_meta($entry['id'], 'payflexi_tx_reference', $response->reference);
 		gform_update_meta($entry['id'], 'payflexi_tx_callback_url', $response->checkout_url);
+		gform_update_meta($entry['id'], 'payflexi_total_order_amount', $args['amount']);
 
 		return  $response->checkout_url;
 	}
 
-	public function get_fields_meta_data($feed, $entry, $fields)
-	{
-		$data = [];
 
-		foreach ($fields as $field) {
-			$field_id = $feed['meta'][$field['meta_name']];
-			$value    = rgar($entry, $field_id);
+	public function return_url($form_id, $entry_id, $feed_id)
+    {
+        $pageURL = GFCommon::is_ssl() ? 'https://' : 'http://';
 
-			if ($field['name'] == 'country') {
-				$value = class_exists('GF_Field_Address') ? GF_Fields::get('address')->get_country_code($value) : GFCommon::get_country_code($value);
-			} elseif ($field['name'] == 'state') {
-				$value = class_exists('GF_Field_Address') ? GF_Fields::get('address')->get_us_state_code($value) : GFCommon::get_us_state_code($value);
-			}
+        $server_port = apply_filters('gform_payflexi_return_url_port', $_SERVER['SERVER_PORT']);
 
-			if (!empty($value)) {
-				$data["{$field['name']}"] = $value;
-			}
-		}
+        if ($server_port != '80') {
+            $pageURL .= $_SERVER['SERVER_NAME'] . ':' . $server_port . $_SERVER['REQUEST_URI'];
+        } else {
+            $pageURL .= $_SERVER['SERVER_NAME'] . $_SERVER['REQUEST_URI'];
+        }
 
-		return $data;
-	}
+		$ids_query = "ids={$entry_id}|{$feed_id}|{$form_id}";
+		$ids_query .= '&hash=' . wp_hash($ids_query);
 
-	public function get_customer_fields()
-	{
-		return array(
-			array('name' => 'email', 'label' => 'Email', 'meta_name' => 'customerInformation_email'),
-			array('name' => 'first_name', 'label' => 'First Name', 'meta_name' => 'customerInformation_firstName'),
-			array('name' => 'last_name', 'label' => 'Last Name', 'meta_name' => 'customerInformation_lastName'),
-		);
-	}
+        $url = add_query_arg('gf_payflexi_return', base64_encode($ids_query), $pageURL);
 
-	public function get_billing_fields()
-	{
-		return array(
-			array('name' => 'address1', 'label' => 'Address', 'meta_name' => 'billingInformation_address'),
-			array('name' => 'address2', 'label' => 'Address 2', 'meta_name' => 'billingInformation_address2'),
-			array('name' => 'city', 'label' => 'City', 'meta_name' => 'billingInformation_city'),
-			array('name' => 'state', 'label' => 'State', 'meta_name' => 'billingInformation_state'),
-			array('name' => 'zip', 'label' => 'Zip', 'meta_name' => 'billingInformation_zip'),
-			array('name' => 'country', 'label' => 'Country', 'meta_name' => 'billingInformation_country'),
-		);
-	}
+		return $url;
+    }
 	/**
 	 * Display the thank you page when there's a gf_payflexi_return URL param and the charge is successful.
 	 *
@@ -969,8 +946,10 @@ class GFPayflexi extends GFPaymentAddOn
 
 				$reference = sanitize_text_field(rgget('pf_approved'));
 
+				$args = array();
+
 				try {
-					$response = $this->payflexi_api->send_request("merchants/transactions/{$reference}", [], 'get');
+					$response = $this->payflexi_api->send_request("merchants/transactions/{$reference}", $args, 'get');
 
 					$this->log_debug(__METHOD__ . "(): Transaction verified. " . print_r($response, 1));
 				} catch (\Exception $e) {
@@ -981,15 +960,26 @@ class GFPayflexi extends GFPaymentAddOn
 
 				$charge = $response['data'];
 
-				if (!$response || $charge['status'] !== 'approved') {
+				if (!$response || $charge['status'] == 'failed' || $charge['status'] == 'abandoned') {
+					// Updating lead's payment_status to Failed
+					GFAPI::update_entry_property($entry['id'], 'payment_status', 'Failed');
 					// Charge Failed
 					$this->log_error(__METHOD__ . "(): Transaction verification failed Reason: " . $response['message']);
 
 					return false;
 				}
 
-				gform_update_meta($entry['id'], 'payflexi_total_order_amount', $charge['amount']);
-				gform_update_meta($entry['id'], 'payflexi_installment_amount_paid', $charge['txn_amount']);
+				if (!$response || $charge['status'] == 'pending') {
+					// Pending Transaction. Might come from shared checkout
+					$this->log_error(__METHOD__ . "(): Transaction still processing: " . $response['message']);
+
+					return false;
+				}
+
+				gform_update_meta($entry['id'], 'payflexi_total_amount_paid', $charge['txn_amount']);
+
+				// Updating lead's payment_status to Processing
+				GFAPI::update_entry_property($entry['id'], 'payment_status', 'Processing');
 
 				if (!class_exists('GFFormDisplay')) {
 					require_once(GFCommon::get_base_path() . '/form_display.php');
@@ -1046,70 +1036,74 @@ class GFPayflexi extends GFPaymentAddOn
 
 		$this->log_debug(__METHOD__ . '(): Webhook callback received. Starting to process => ' . print_r($_REQUEST, true));
 
-		
 		$type = $event['event'];
 
-		if ('transaction.approved' == $type && 'approved' == $event['data']['status'] ) {
+		if ('transaction.approved' === $type && $event['data']['status'] === 'approved') {
 		
-			if (!isset($event['data']['domain']) || isset($event['data']['meta']['invoice_action'])) {
+			if (!isset($event['data']['id']) || !isset($event['data']['meta']['entry_id'])) {
 				return false;
 			}
 
 			$entry_id = rgars($event, 'data/meta/entry_id');
 
-				if (!$entry_id && $reference = rgars($event, 'data/initial_reference')) {
-					$entry_id = $this->get_entry_id_by_reference($reference);
+			if (!$entry_id && $reference = rgars($event, 'data/initial_reference')) {
+				$entry_id = $this->get_entry_id_by_reference($reference);
+			}
+
+			if (!$entry_id) {
+				return new WP_Error('entry_not_found', sprintf(__('Entry for transaction id: %s was not found. Webhook cannot be processed.', 'gravityformspayflexi'), $action['transaction_id']));
+			}
+
+			$entry = GFAPI::get_entry($entry_id);
+
+			if (is_wp_error($entry)) {
+				$this->log_error(__METHOD__ . '(): ' . $entry->get_error_message());
+				return false;
+			}
+
+			$this->log_debug(__METHOD__ . '(): Entry has been found => ' . print_r($entry, true));
+
+			$feed = $this->get_payment_feed($entry);
+
+			// Let's ignore forms that are no longer configured to use the PayFlexi add-on  
+			if (!$feed || !rgar($feed, 'is_active')) {
+				$this->log_error(__METHOD__ . "(): Form no longer uses the PayFlexi Addon. Form ID: {$entry['form_id']}. Aborting.");
+
+				return false;
+			}
+
+			$payflexi_tx_reference = gform_get_meta($entry['id'], 'payflexi_tx_reference');
+			$payflexi_total_order_amount = gform_get_meta($entry['id'], 'payflexi_total_order_amount');
+
+			if ($event['data']['txn_amount'] >= $payflexi_total_order_amount ) {
+				gform_update_meta($entry['id'], 'payflexi_total_order_amount', $event['data']['amount']);
+				gform_update_meta($entry['id'], 'payflexi_total_amount_paid', $event['data']['txn_amount']);
+				$payflexi_total_amount_paid = gform_get_meta($entry['id'], 'payflexi_total_amount_paid');
+			}
+				
+			if ($event['data']['txn_amount'] < $payflexi_total_order_amount ) {
+
+				if($payflexi_tx_reference === $event['data']['initial_reference']){
+					gform_update_meta($entry['id'], 'payflexi_total_order_amount', $event['data']['amount']);
+					gform_update_meta($entry['id'], 'payflexi_total_amount_paid', $event['data']['txn_amount']);
+					$payflexi_total_amount_paid = gform_get_meta($entry['id'], 'payflexi_total_amount_paid');
 				}
-
-				if (!$entry_id) {
-					return new WP_Error('entry_not_found', sprintf(__('Entry for transaction id: %s was not found. Webhook cannot be processed.', 'gravityformspayflexi'), $action['transaction_id']));
+				if($payflexi_tx_reference !== $event['data']['initial_reference']){
+					$payflexi_total_amount_paid = gform_get_meta($entry['id'], 'payflexi_total_amount_paid');
+					$total_installment_amount_paid = $payflexi_total_amount_paid + $event['data']['txn_amount'];
+					gform_update_meta($entry['id'], 'payflexi_total_amount_paid', $total_installment_amount_paid);
+					$payflexi_total_amount_paid = gform_get_meta($entry['id'], 'payflexi_total_amount_paid');
 				}
-
-				$entry = GFAPI::get_entry($entry_id);
-
-				if (is_wp_error($entry)) {
-					$this->log_error(__METHOD__ . '(): ' . $entry->get_error_message());
-
-					return false;
-				}
-
-				$this->log_debug(__METHOD__ . '(): Entry has been found => ' . print_r($entry, true));
-
-				$feed = $this->get_payment_feed($entry);
-
-				// Let's ignore forms that are no longer configured to use the PayFlexi add-on  
-				if (!$feed || !rgar($feed, 'is_active')) {
-					$this->log_error(__METHOD__ . "(): Form no longer uses the PayFlexi Addon. Form ID: {$entry['form_id']}. Aborting.");
-
-					return false;
-				}
-
-				$payflexi_tx_reference = gform_get_meta($entry['id'], 'payflexi_tx_reference');
-				$payflexi_total_order_amount = gform_get_meta($entry['id'], 'payflexi_total_order_amount');
-
-				if ($event['data']['txn_amount'] < $payflexi_total_order_amount ) {
-
-					if($payflexi_tx_reference === $event['data']['initial_reference']){
-						gform_update_meta($entry['id'], 'payflexi_total_order_amount', $event['data']['amount']);
-						gform_update_meta($entry['id'], 'payflexi_installment_amount_paid', $event['data']['txn_amount']);
-						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
-					}
-					if($payflexi_tx_reference !== $event['data']['initial_reference']){
-						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
-						$total_installment_amount_paid = $payflexi_installment_amount_paid + $event['data']['txn_amount'];
-						gform_update_meta($entry['id'], 'payflexi_installment_amount_paid', $total_installment_amount_paid);
-						$payflexi_installment_amount_paid = gform_get_meta($entry['id'], 'payflexi_installment_amount_paid');
-					}
-				}
+			}
 			
-				$action['id']               = rgars($event, 'data/id') . '_' . $type;
-				$action['entry_id']         = $entry_id;
-				$action['transaction_id']   = rgars($event, 'data/id');
-				$action['amount']           = $this->get_amount_import(rgars($event, $payflexi_installment_amount_paid), rgars($event, 'data/currency'));
-				$action['type']             = 'complete_payment';
-				$action['ready_to_fulfill'] = !$entry['is_fulfilled'] ? true : false;
-				$action['payment_date']     = rgars($event, 'data/created_at');
-				$action['payment_method']   = $this->_slug;
+			$action['id']               = rgars($event, 'data/id') . '_' . $type;
+			$action['entry_id']         = $entry_id;
+			$action['transaction_id']   = rgars($event, 'data/id');
+			$action['amount']           = $this->get_amount_import($payflexi_total_amount_paid, rgars($event, 'data/currency'));
+			$action['type']             = 'complete_payment';
+			$action['ready_to_fulfill'] = !$entry['is_fulfilled'] ? true : false;
+			$action['payment_date']     = rgars($event, 'data/created_at');
+			$action['payment_method']   = $this->_slug;
 	
 		}
 
@@ -1131,10 +1125,6 @@ class GFPayflexi extends GFPaymentAddOn
 	public function post_payment_action($entry, $action)
 	{
 		parent::post_payment_action($entry, $action);
-
-		if (isset($action['add_subscription_payment']) && is_array($action['add_subscription_payment'])) {
-			$this->add_subscription_payment($entry, $action['add_subscription_payment']);
-		}
 	}
 
 	/**
@@ -1196,7 +1186,6 @@ class GFPayflexi extends GFPaymentAddOn
 
 		return $url;
 	}
-
 	/**
 	 * Helper to check that webhooks are enabled.
 	 *
@@ -1445,6 +1434,21 @@ class GFPayflexi extends GFPaymentAddOn
 		}
 
 		return $this->get_api_key('secret', $mode, $settings);
+	}
+	/**
+	 * Returns the specified plugin setting.
+	 *
+	 * @since 2.6.0.1
+	 *
+	 * @param string $setting_name The setting to be returned.
+	 *
+	 * @return mixed|string
+	 */
+	public function get_plugin_setting( $setting_name ) 
+	{
+		$setting = parent::get_plugin_setting( $setting_name );
+
+		return $setting;
 	}
 	/**
 	 * Check if rate limits is enabled.
