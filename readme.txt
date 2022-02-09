@@ -1,11 +1,11 @@
-=== PayFlexi Instalment Payment Gateway for Gravity Forms ===
+=== PayFlexi Installment Payment Plans for Gravity Forms ===
 Contributors: stanwarri
 Plugin URI: https://payflexi.co
-Tags: payments, flexible payment, installment payment, gravityforms
+Tags: payments, flexible payment, installment payment, gravityforms, payment plans
 Requires at least: 5.1
-Tested up to: 5.8.1
-Requires PHP: 7.2
-Stable tag: 1.2.1
+Tested up to: 5.9
+Requires PHP: 7.2 and higher
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -83,9 +83,11 @@ You can find help and information on PayFlexi on our [Help Desk](https://support
 
 == Changelog ==
 
-= 1.2.1 - December 7, 2021 =
-*   Fixed payment status issue based on gateway response
+= 2.0.0 - February 9, 2022 =
+* Compatibility with WordPress v5.9 and PHP 8
 
+= 1.2.1 - December 7, 2021 =
+* Fixed payment status issue based on gateway response
 
 = 1.2.0 - October 26, 2021 =
-*   Fixed redirect url after payment confirmation
+* Fixed redirect url after payment confirmation

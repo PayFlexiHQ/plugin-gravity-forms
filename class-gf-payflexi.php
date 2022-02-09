@@ -828,7 +828,7 @@ class GFPayflexi extends GFPaymentAddOn
 		$reference = uniqid("gf-{$entry['id']}-");
 
 		// Updating lead's payment_status to Processing
-		GFAPI::update_entry_property($entry['id'], 'payment_status', 'Pending');
+		GFAPI::update_entry_property($entry['id'], 'payment_status', 'Processing');
 
 		// Prepare transaction data
 		$args = array(
@@ -965,13 +965,6 @@ class GFPayflexi extends GFPaymentAddOn
 					GFAPI::update_entry_property($entry['id'], 'payment_status', 'Failed');
 					// Charge Failed
 					$this->log_error(__METHOD__ . "(): Transaction verification failed Reason: " . $response['message']);
-
-					return false;
-				}
-
-				if (!$response || $charge['status'] == 'pending') {
-					// Pending Transaction. Might come from shared checkout
-					$this->log_error(__METHOD__ . "(): Transaction still processing: " . $response['message']);
 
 					return false;
 				}
